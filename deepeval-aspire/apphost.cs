@@ -49,6 +49,11 @@ var scaMockApi = builder.AddCSharpApp("scamockapi", "../backend/ScaMockApi")
     .WithReference(rabbitMq)
     .WaitFor(transactionDb)
     .WaitFor(rabbitMq);
+
+var scaMockApiComponentTests = builder.AddCSharpApp("scamockapi-componenttests", "../backend/ScaMockApi.ComponentTests")
+    .WithEnvironment("ScaMockApi__BaseUrl", scaMockApi.GetEndpoint("http"))
+    .WithReference(scaMockApi)
+    .WaitFor(scaMockApi);
 #pragma warning restore ASPIRECSHARPAPPS001
 
 //#####################AI & Gateway############################
