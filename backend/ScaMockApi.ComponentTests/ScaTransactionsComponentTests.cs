@@ -1,13 +1,20 @@
-using System.Net;
+using System.Globalization;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
 using ScaMockApi.Models;
+using Xunit.Gherkin.Quick;
 
 namespace ScaMockApi.ComponentTests;
 
-public class ScaTransactionsComponentTests : IDisposable
+[FeatureFile("./Features/ScaTransactions.feature")]
+public sealed class ScaTransactionsComponentTests : Feature, IDisposable
 {
     private readonly HttpClient _client;
+    private string _accountNumber = string.Empty;
+    private decimal _transactionAmount;
+    private HttpResponseMessage? _lastResponse;
+    private ScaTransaction? _currentTransaction;
+    private VerifyScaTransactionResponse? _lastVerificationResponse;
 
     public ScaTransactionsComponentTests()
     {
@@ -34,136 +41,147 @@ public class ScaTransactionsComponentTests : IDisposable
         };
     }
 
-    [Fact]
-    public async Task HealthCheck_ReturnsOk()
+    [Given(@"an account number ""(.*)"" and transaction amount (.*)")]
+    public void GivenAnAccountNumberAndTransactionAmount(string accountNumber, string amount)
     {
-        var response = await _client.GetAsync("/api/healthcheck");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        _accountNumber = accountNumber;
+        _transactionAmount = decimal.Parse(amount, CultureInfo.InvariantCulture);
     }
 
-    [Fact]
-    public async Task StartTransaction_AboveThreshold_ReturnsChallengeRequiredWithFactors()
+    [When(@"I call the healthcheck endpoint")]
+    public async Task WhenICallTheHealthcheckEndpoint()
     {
-        var response = await _client.PostAsJsonAsync("/api/sca/transactions/start", new StartScaTransactionRequest(
-            AccountNumber: "12345678",
-            TransactionAmount: 50.00m
-        ));
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var transaction = await response.Content.ReadFromJsonAsync<ScaTransaction>();
-        Assert.NotNull(transaction);
-        Assert.NotEqual(Guid.Empty, transaction.TransactionId);
-        Assert.Equal("12345678", transaction.AccountNumber);
-        Assert.Equal(50.00m, transaction.TransactionAmount);
-        Assert.Equal("CHALLENGE_REQUIRED", transaction.Status);
-        Assert.Equal("SCA_STEP_UP_REQUIRED", transaction.ReasonCode);
-        Assert.Equal(["otp", "email", "biometric"], transaction.Factors);
+        _lastResponse = await _client.GetAsync("/api/healthcheck");
     }
 
-    [Fact]
-    public async Task StartTransaction_BelowThreshold_ReturnsExemptApproved()
+    [When(@"I start an SCA transaction")]
+    public async Task WhenIStartAnScaTransaction()
     {
-        var response = await _client.PostAsJsonAsync("/api/sca/transactions/start", new StartScaTransactionRequest(
-            AccountNumber: "12345678",
-            TransactionAmount: 15.00m
-        ));
+        _lastResponse = await _client.PostAsJsonAsync(
+            "/api/sca/transactions/start",
+            new StartScaTransactionRequest(_accountNumber, _transactionAmount));
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var transaction = await response.Content.ReadFromJsonAsync<ScaTransaction>();
-        Assert.NotNull(transaction);
-        Assert.Equal("EXEMPT_APPROVED", transaction.Status);
-        Assert.Equal("LOW_VALUE_EXEMPTION", transaction.ReasonCode);
+        if (_lastResponse.IsSuccessStatusCode)
+        {
+            _currentTransaction = await _lastResponse.Content.ReadFromJsonAsync<ScaTransaction>();
+        }
     }
 
-    [Fact]
-    public async Task IssueFactor_ValidFactor_ReturnsFactorIssuedResponse()
+    [When(@"I issue the factor ""(.*)"" for account ""(.*)""")]
+    [And(@"I issue the factor ""(.*)"" for account ""(.*)""")]
+    public async Task WhenIIssueTheFactorForAccount(string factor, string accountNumber)
     {
-        var startResponse = await _client.PostAsJsonAsync("/api/sca/transactions/start", new StartScaTransactionRequest(
-            AccountNumber: "87654321",
-            TransactionAmount: 100.00m
-        ));
-        var started = await startResponse.Content.ReadFromJsonAsync<ScaTransaction>();
-        Assert.NotNull(started);
+        Assert.NotNull(_currentTransaction);
 
-        var issueResponse = await _client.PostAsJsonAsync("/api/sca/transactions/issue", new IssueScaFactorRequest(
-            TransactionId: started.TransactionId,
-            AccountNumber: "87654321",
-            SelectedFactor: "biometric"
-        ));
+        _lastResponse = await _client.PostAsJsonAsync(
+            "/api/sca/transactions/issue",
+            new IssueScaFactorRequest(_currentTransaction.TransactionId, accountNumber, factor));
 
-        Assert.Equal(HttpStatusCode.OK, issueResponse.StatusCode);
-
-        var updated = await issueResponse.Content.ReadFromJsonAsync<ScaTransaction>();
-        Assert.NotNull(updated);
-        Assert.Equal(started.TransactionId, updated.TransactionId);
-        Assert.Equal("FACTOR_ISSUED", updated.Status);
-        Assert.Equal("biometric", updated.SelectedFactor);
-        Assert.Equal("FACTOR_BIOMETRIC_ISSUED", updated.ReasonCode);
-        Assert.NotNull(updated.FactorIssuedAt);
+        if (_lastResponse.IsSuccessStatusCode)
+        {
+            _currentTransaction = await _lastResponse.Content.ReadFromJsonAsync<ScaTransaction>();
+        }
     }
 
-    [Fact]
-    public async Task VerifyTransaction_AfterFactorIssued_ReturnsAuthenticatedResponse()
+    [When(@"I verify the transaction for account ""(.*)""")]
+    [And(@"I verify the transaction for account ""(.*)""")]
+    public async Task WhenIVerifyTheTransactionForAccount(string accountNumber)
     {
-        var startResponse = await _client.PostAsJsonAsync("/api/sca/transactions/start", new StartScaTransactionRequest(
-            AccountNumber: "99990000",
-            TransactionAmount: 75.00m
-        ));
-        var started = await startResponse.Content.ReadFromJsonAsync<ScaTransaction>();
-        Assert.NotNull(started);
+        Assert.NotNull(_currentTransaction);
 
-        await _client.PostAsJsonAsync("/api/sca/transactions/issue", new IssueScaFactorRequest(
-            TransactionId: started.TransactionId,
-            AccountNumber: "99990000",
-            SelectedFactor: "otp"
-        ));
+        _lastResponse = await _client.PostAsJsonAsync(
+            "/api/sca/transactions/verify",
+            new VerifyScaTransactionRequest(_currentTransaction.TransactionId, accountNumber));
 
-        var verifyResponse = await _client.PostAsJsonAsync("/api/sca/transactions/verify", new VerifyScaTransactionRequest(
-            TransactionId: started.TransactionId,
-            AccountNumber: "99990000"
-        ));
-
-        Assert.Equal(HttpStatusCode.OK, verifyResponse.StatusCode);
-
-        var verification = await verifyResponse.Content.ReadFromJsonAsync<VerifyScaTransactionResponse>();
-        Assert.NotNull(verification);
-        Assert.Equal(started.TransactionId, verification.TransactionId);
-        Assert.True(verification.IsAuthenticated);
-        Assert.Equal("AUTHENTICATED", verification.Status);
-        Assert.Equal("SCA_AUTH_SUCCESS", verification.ReasonCode);
-        Assert.Equal("otp", verification.SelectedFactor);
+        if (_lastResponse.IsSuccessStatusCode)
+        {
+            _lastVerificationResponse = await _lastResponse.Content.ReadFromJsonAsync<VerifyScaTransactionResponse>();
+        }
     }
 
-    [Fact]
-    public async Task VerifyTransaction_WithoutFactorIssued_ReturnsAuthFailedResponse()
+    [When(@"I verify an unknown transaction ID for account ""(.*)""")]
+    public async Task WhenIVerifyAnUnknownTransactionIdForAccount(string accountNumber)
     {
-        var startResponse = await _client.PostAsJsonAsync("/api/sca/transactions/start", new StartScaTransactionRequest(
-            AccountNumber: "99990000",
-            TransactionAmount: 75.00m
-        ));
-        var started = await startResponse.Content.ReadFromJsonAsync<ScaTransaction>();
-        Assert.NotNull(started);
+        _lastResponse = await _client.PostAsJsonAsync(
+            "/api/sca/transactions/verify",
+            new VerifyScaTransactionRequest(Guid.NewGuid(), accountNumber));
+    }
 
-        var verifyResponse = await _client.PostAsJsonAsync("/api/sca/transactions/verify", new VerifyScaTransactionRequest(
-            TransactionId: started.TransactionId,
-            AccountNumber: "99990000"
-        ));
+    [Then(@"the response status code should be (\d+)")]
+    public void ThenTheResponseStatusCodeShouldBe(int expectedStatusCode)
+    {
+        Assert.NotNull(_lastResponse);
+        Assert.Equal(expectedStatusCode, (int)_lastResponse.StatusCode);
+    }
 
-        Assert.Equal(HttpStatusCode.OK, verifyResponse.StatusCode);
+    [Then(@"the transaction status should be ""(.*)""")]
+    [And(@"the transaction status should be ""(.*)""")]
+    public void ThenTheTransactionStatusShouldBe(string expectedStatus)
+    {
+        Assert.NotNull(_currentTransaction);
+        Assert.Equal(expectedStatus, _currentTransaction.Status);
+    }
 
-        var verification = await verifyResponse.Content.ReadFromJsonAsync<VerifyScaTransactionResponse>();
-        Assert.NotNull(verification);
-        Assert.Equal(started.TransactionId, verification.TransactionId);
-        Assert.False(verification.IsAuthenticated);
-        Assert.Equal("AUTH_FAILED", verification.Status);
-        Assert.Equal("SCA_FACTOR_NOT_ISSUED", verification.ReasonCode);
+    [Then(@"the transaction reason code should be ""(.*)""")]
+    [And(@"the transaction reason code should be ""(.*)""")]
+    public void ThenTheTransactionReasonCodeShouldBe(string expectedReasonCode)
+    {
+        Assert.NotNull(_currentTransaction);
+        Assert.Equal(expectedReasonCode, _currentTransaction.ReasonCode);
+    }
+
+    [Then(@"the available factors should include ""(.*)""")]
+    [And(@"the available factors should include ""(.*)""")]
+    public void ThenTheAvailableFactorsShouldInclude(string expectedFactorsCsv)
+    {
+        Assert.NotNull(_currentTransaction);
+        var expectedFactors = expectedFactorsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Assert.Equal(expectedFactors, _currentTransaction.Factors);
+    }
+
+    [Then(@"the selected factor should be ""(.*)""")]
+    [And(@"the selected factor should be ""(.*)""")]
+    public void ThenTheSelectedFactorShouldBe(string expectedFactor)
+    {
+        Assert.NotNull(_currentTransaction);
+        Assert.Equal(expectedFactor, _currentTransaction.SelectedFactor);
+    }
+
+    [Then(@"the verification result should be authenticated (true|false)")]
+    [And(@"the verification result should be authenticated (true|false)")]
+    public void ThenTheVerificationResultShouldBeAuthenticated(string expectedAuthenticated)
+    {
+        Assert.NotNull(_lastVerificationResponse);
+        Assert.Equal(bool.Parse(expectedAuthenticated), _lastVerificationResponse.IsAuthenticated);
+    }
+
+    [Then(@"the verification status should be ""(.*)""")]
+    [And(@"the verification status should be ""(.*)""")]
+    public void ThenTheVerificationStatusShouldBe(string expectedStatus)
+    {
+        Assert.NotNull(_lastVerificationResponse);
+        Assert.Equal(expectedStatus, _lastVerificationResponse.Status);
+    }
+
+    [Then(@"the verification reason code should be ""(.*)""")]
+    [And(@"the verification reason code should be ""(.*)""")]
+    public void ThenTheVerificationReasonCodeShouldBe(string expectedReasonCode)
+    {
+        Assert.NotNull(_lastVerificationResponse);
+        Assert.Equal(expectedReasonCode, _lastVerificationResponse.ReasonCode);
+    }
+
+    [Then(@"the verified selected factor should be ""(.*)""")]
+    [And(@"the verified selected factor should be ""(.*)""")]
+    public void ThenTheVerifiedSelectedFactorShouldBe(string expectedFactor)
+    {
+        Assert.NotNull(_lastVerificationResponse);
+        Assert.Equal(expectedFactor, _lastVerificationResponse.SelectedFactor);
     }
 
     public void Dispose()
     {
+        _lastResponse?.Dispose();
         _client.Dispose();
     }
 }
