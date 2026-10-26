@@ -1,0 +1,37 @@
+@ScaMockApi_HostAddress = http://localhost:5079
+
+GET {{ScaMockApi_HostAddress}}/api/healthcheck
+Accept: application/json
+
+###
+
+POST {{ScaMockApi_HostAddress}}/api/sca/transactions/start
+Content-Type: application/json
+
+{
+  "accountNumber": "12345678",
+  "transactionAmount": 45.00
+}
+
+###
+
+POST {{ScaMockApi_HostAddress}}/api/sca/transactions/issue
+Content-Type: application/json
+
+{
+  "transactionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "accountNumber": "12345678",
+  "selectedFactor": "otp"
+}
+
+###
+
+POST {{ScaMockApi_HostAddress}}/api/sca/transactions/verify
+Content-Type: application/json
+
+{
+  "transactionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "accountNumber": "12345678"
+}
+
+###

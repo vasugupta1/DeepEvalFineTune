@@ -1,5 +1,7 @@
+#:package Aspire.Hosting.MongoDB@13.5.3
 #:package Aspire.Hosting.PostgreSQL@13.5.3
 #:package Aspire.Hosting.Python@13.5.3
+#:package Aspire.Hosting.RabbitMQ@13.5.3
 #:package Aspire.Hosting.Redis@13.5.3
 #:package CommunityToolkit.Aspire.Hosting.Ollama@13.3.0
 #:sdk Aspire.AppHost.Sdk@13.5.3
@@ -19,10 +21,28 @@ var redis = builder.AddRedis("deepeval-cache")
     .WithDataVolume("deepeval-redis-data")
     .WithLifetime(ContainerLifetime.Persistent);
 
+var mongo = builder.AddMongoDB("deepeval-mongodb")
+    .WithDataVolume("deepeval-mongo-data")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithMongoExpress();
+
+var transactionDb = mongo.AddDatabase("scatransactions");
+
+var rabbitMq = builder.AddRabbitMQ("deepeval-rabbitmq")
+    .WithDataVolume("deepeval-rabbitmq-data")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithManagementPlugin();
+
 //#####################Downstream Domain Services##############
-// var scaMockApi = builder.AddCSharpApp("scamockapi", "../backend/ScaMockApi")
-//     .WithHttpEndpoint(port: 8001, name: "http")
-//     .WithHttpHealthCheck("/api/healthcheck");
+#pragma warning disable ASPIRECSHARPAPPS001
+var scaMockApi = builder.AddCSharpApp("scamockapi", "../backend/ScaMockApi")
+    .WithHttpEndpoint(port: 8001, name: "http")
+    .WithHttpHealthCheck("/api/healthcheck")
+    .WithReference(transactionDb)
+    .WithReference(rabbitMq)
+    .WaitFor(transactionDb)
+    .WaitFor(rabbitMq);
+#pragma warning restore ASPIRECSHARPAPPS001
 
 //#####################AI & Gateway############################
 var ollama = builder.AddOllama("ollama")
