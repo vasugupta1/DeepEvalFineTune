@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ScaMockApi.Messaging;
 using ScaMockApi.Models;
 using ScaMockApi.Repositories;
@@ -8,6 +9,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
+
+builder.Services.Configure<ScaEventQueueOptions>(
+    builder.Configuration.GetSection(ScaEventQueueOptions.SectionName));
 
 builder.AddMongoDBClient("scatransactions");
 builder.AddRabbitMQClient("deepeval-rabbitmq");
@@ -31,21 +35,23 @@ app.MapPost("/api/sca/transactions/start", async (
     StartScaTransactionRequest request,
     IScaTransactionRepository repository,
     IScaEventPublisher eventPublisher,
+    IOptions<ScaEventQueueOptions> queueOptions,
     CancellationToken cancellationToken) =>
 {
     const string endpoint = "/api/sca/transactions/start";
+    var queue = queueOptions.Value.StartTransaction;
 
     if (string.IsNullOrWhiteSpace(request.AccountNumber))
     {
         var error = new ScaErrorResponse("AccountNumber is required.");
-        await eventPublisher.PublishResponseAsync("ScaTransactionStartFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaTransactionStartFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
     if (request.TransactionAmount <= 0)
     {
         var error = new ScaErrorResponse("TransactionAmount must be greater than zero.");
-        await eventPublisher.PublishResponseAsync("ScaTransactionStartFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaTransactionStartFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
@@ -64,7 +70,7 @@ app.MapPost("/api/sca/transactions/start", async (
     );
 
     await repository.CreateAsync(transaction, cancellationToken);
-    await eventPublisher.PublishResponseAsync("ScaTransactionStarted", endpoint, StatusCodes.Status200OK, transaction, cancellationToken);
+    await eventPublisher.PublishResponseAsync(queue, "ScaTransactionStarted", endpoint, StatusCodes.Status200OK, transaction, cancellationToken);
 
     return Results.Ok(transaction);
 })
@@ -74,28 +80,30 @@ app.MapPost("/api/sca/transactions/issue", async (
     IssueScaFactorRequest request,
     IScaTransactionRepository repository,
     IScaEventPublisher eventPublisher,
+    IOptions<ScaEventQueueOptions> queueOptions,
     CancellationToken cancellationToken) =>
 {
     const string endpoint = "/api/sca/transactions/issue";
+    var queue = queueOptions.Value.IssueFactor;
 
     if (request.TransactionId == Guid.Empty)
     {
         var error = new ScaErrorResponse("TransactionId is required.");
-        await eventPublisher.PublishResponseAsync("ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
     if (string.IsNullOrWhiteSpace(request.AccountNumber))
     {
         var error = new ScaErrorResponse("AccountNumber is required.");
-        await eventPublisher.PublishResponseAsync("ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
     if (string.IsNullOrWhiteSpace(request.SelectedFactor))
     {
         var error = new ScaErrorResponse("SelectedFactor is required.");
-        await eventPublisher.PublishResponseAsync("ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
@@ -103,14 +111,14 @@ app.MapPost("/api/sca/transactions/issue", async (
     if (transaction is null)
     {
         var error = new ScaErrorResponse($"Transaction '{request.TransactionId}' was not found.");
-        await eventPublisher.PublishResponseAsync("ScaFactorIssueFailed", endpoint, StatusCodes.Status404NotFound, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssueFailed", endpoint, StatusCodes.Status404NotFound, error, cancellationToken);
         return Results.NotFound(error);
     }
 
     if (!string.Equals(transaction.AccountNumber, request.AccountNumber, StringComparison.Ordinal))
     {
         var error = new ScaErrorResponse("AccountNumber does not match the transaction.");
-        await eventPublisher.PublishResponseAsync("ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
@@ -121,7 +129,7 @@ app.MapPost("/api/sca/transactions/issue", async (
             $"Factor '{request.SelectedFactor}' is not valid for this transaction.",
             transaction.Factors
         );
-        await eventPublisher.PublishResponseAsync("ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssueFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
@@ -134,7 +142,7 @@ app.MapPost("/api/sca/transactions/issue", async (
     };
 
     await repository.UpdateAsync(updatedTransaction, cancellationToken);
-    await eventPublisher.PublishResponseAsync("ScaFactorIssued", endpoint, StatusCodes.Status200OK, updatedTransaction, cancellationToken);
+    await eventPublisher.PublishResponseAsync(queue, "ScaFactorIssued", endpoint, StatusCodes.Status200OK, updatedTransaction, cancellationToken);
 
     return Results.Ok(updatedTransaction);
 })
@@ -144,21 +152,23 @@ app.MapPost("/api/sca/transactions/verify", async (
     VerifyScaTransactionRequest request,
     IScaTransactionRepository repository,
     IScaEventPublisher eventPublisher,
+    IOptions<ScaEventQueueOptions> queueOptions,
     CancellationToken cancellationToken) =>
 {
     const string endpoint = "/api/sca/transactions/verify";
+    var queue = queueOptions.Value.VerifyTransaction;
 
     if (request.TransactionId == Guid.Empty)
     {
         var error = new ScaErrorResponse("TransactionId is required.");
-        await eventPublisher.PublishResponseAsync("ScaTransactionVerifyFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaTransactionVerifyFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
     if (string.IsNullOrWhiteSpace(request.AccountNumber))
     {
         var error = new ScaErrorResponse("AccountNumber is required.");
-        await eventPublisher.PublishResponseAsync("ScaTransactionVerifyFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaTransactionVerifyFailed", endpoint, StatusCodes.Status400BadRequest, error, cancellationToken);
         return Results.BadRequest(error);
     }
 
@@ -166,7 +176,7 @@ app.MapPost("/api/sca/transactions/verify", async (
     if (transaction is null)
     {
         var error = new ScaErrorResponse($"Transaction '{request.TransactionId}' was not found.");
-        await eventPublisher.PublishResponseAsync("ScaTransactionVerifyFailed", endpoint, StatusCodes.Status404NotFound, error, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaTransactionVerifyFailed", endpoint, StatusCodes.Status404NotFound, error, cancellationToken);
         return Results.NotFound(error);
     }
 
@@ -183,7 +193,7 @@ app.MapPost("/api/sca/transactions/verify", async (
             SelectedFactor: transaction.SelectedFactor,
             VerifiedAt: verifiedAt
         );
-        await eventPublisher.PublishResponseAsync("ScaTransactionVerified", endpoint, StatusCodes.Status200OK, mismatchResponse, cancellationToken);
+        await eventPublisher.PublishResponseAsync(queue, "ScaTransactionVerified", endpoint, StatusCodes.Status200OK, mismatchResponse, cancellationToken);
         return Results.Ok(mismatchResponse);
     }
 
@@ -213,7 +223,7 @@ app.MapPost("/api/sca/transactions/verify", async (
         VerifiedAt: verifiedAt
     );
 
-    await eventPublisher.PublishResponseAsync("ScaTransactionVerified", endpoint, StatusCodes.Status200OK, response, cancellationToken);
+    await eventPublisher.PublishResponseAsync(queue, "ScaTransactionVerified", endpoint, StatusCodes.Status200OK, response, cancellationToken);
 
     return Results.Ok(response);
 })

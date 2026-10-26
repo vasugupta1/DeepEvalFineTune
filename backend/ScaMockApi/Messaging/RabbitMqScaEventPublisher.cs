@@ -6,7 +6,6 @@ namespace ScaMockApi.Messaging;
 
 public class RabbitMqScaEventPublisher : IScaEventPublisher
 {
-    private const string QueueName = "sca-transaction-events";
     private readonly IConnection _connection;
 
     public RabbitMqScaEventPublisher(IConnection connection)
@@ -15,6 +14,7 @@ public class RabbitMqScaEventPublisher : IScaEventPublisher
     }
 
     public async Task PublishResponseAsync<TPayload>(
+        string queueName,
         string eventType,
         string endpoint,
         int statusCode,
@@ -24,7 +24,7 @@ public class RabbitMqScaEventPublisher : IScaEventPublisher
         await using var channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
         await channel.QueueDeclareAsync(
-            queue: QueueName,
+            queue: queueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -51,7 +51,7 @@ public class RabbitMqScaEventPublisher : IScaEventPublisher
 
         await channel.BasicPublishAsync(
             exchange: string.Empty,
-            routingKey: QueueName,
+            routingKey: queueName,
             mandatory: false,
             basicProperties: properties,
             body: body,
