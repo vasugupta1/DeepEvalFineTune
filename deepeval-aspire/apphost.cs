@@ -1,10 +1,10 @@
-#:package Aspire.Hosting.MongoDB@13.5.3
-#:package Aspire.Hosting.PostgreSQL@13.5.3
-#:package Aspire.Hosting.Python@13.5.3
-#:package Aspire.Hosting.RabbitMQ@13.5.3
-#:package Aspire.Hosting.Redis@13.5.3
+#:package Aspire.Hosting.MongoDB@13.6.4
+#:package Aspire.Hosting.PostgreSQL@13.6.4
+#:package Aspire.Hosting.Python@13.6.4
+#:package Aspire.Hosting.RabbitMQ@13.6.4
+#:package Aspire.Hosting.Redis@13.6.4
 #:package CommunityToolkit.Aspire.Hosting.Ollama@13.3.0
-#:sdk Aspire.AppHost.Sdk@13.5.3
+#:sdk Aspire.AppHost.Sdk@13.6.4
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -50,11 +50,20 @@ var scaMockApi = builder.AddCSharpApp("scamockapi", "../backend/ScaMockApi")
     .WaitFor(transactionDb)
     .WaitFor(rabbitMq);
 
-var scaMockApiComponentTests = builder.AddCSharpApp("scamockapi-componenttests", "../backend/ScaMockApi.ComponentTests")
+#pragma warning restore ASPIRECSHARPAPPS001
+
+// Component tests are an xUnit project, so they must be executed via `dotnet test`
+// (`dotnet run` on a test project builds and exits without running any tests).
+// WaitFor ensures the tests only start once scamockapi is running and its
+// /api/healthcheck endpoint reports healthy.
+var scaMockApiComponentTests = builder.AddExecutable(
+        "scamockapi-componenttests",
+        "dotnet",
+        "../backend/ScaMockApi.ComponentTests",
+        "test", "--logger", "console;verbosity=normal")
     .WithEnvironment("ScaMockApi__BaseUrl", scaMockApi.GetEndpoint("http"))
     .WithReference(scaMockApi)
     .WaitFor(scaMockApi);
-#pragma warning restore ASPIRECSHARPAPPS001
 
 //#####################AI & Gateway############################
 var ollama = builder.AddOllama("ollama")
