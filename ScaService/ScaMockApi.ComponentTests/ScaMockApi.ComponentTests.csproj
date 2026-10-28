@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ScaMockApi\ScaMockApi.csproj" />
+    <ProjectReference Include="..\CustomerMockApi\CustomerMockApi.csproj" />
   </ItemGroup>
 
   <ItemGroup>

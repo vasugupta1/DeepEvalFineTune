@@ -1,0 +1,6 @@
+@CustomerMockApi_HostAddress = http://localhost:5294
+
+GET {{CustomerMockApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

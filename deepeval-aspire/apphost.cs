@@ -46,6 +46,12 @@ var scaMockApi = builder.AddCSharpApp("scamockapi", "../ScaService/ScaMockApi")
     .WaitFor(transactionDb)
     .WaitFor(rabbitMq);
 
+var customerMockApi = builder.AddCSharpApp("customermockapi", "../ScaService/CustomerMockApi")
+    .WithHttpEndpoint(port: 8002, name: "http")
+    .WithHttpHealthCheck("/api/healthcheck")
+    .WithReference(transactionDb)
+    .WaitFor(transactionDb);
+
 #pragma warning restore ASPIRECSHARPAPPS001
 
 // Component tests are an xUnit project, so they must be executed via `dotnet test`
@@ -58,8 +64,11 @@ var scaMockApiComponentTests = builder.AddExecutable(
         "../ScaService/ScaMockApi.ComponentTests",
         "test", "--logger", "console;verbosity=normal")
     .WithEnvironment("ScaMockApi__BaseUrl", scaMockApi.GetEndpoint("http"))
+    .WithEnvironment("CustomerMockApi__BaseUrl", customerMockApi.GetEndpoint("http"))
     .WithReference(scaMockApi)
-    .WaitFor(scaMockApi);
+    .WithReference(customerMockApi)
+    .WaitFor(scaMockApi)
+    .WaitFor(customerMockApi);
 
 //#####################AI & Gateway############################
 var ollama = builder.AddOllama("ollama")
