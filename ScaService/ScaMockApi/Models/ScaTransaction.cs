@@ -30,15 +30,6 @@ public record VerifyScaTransactionResponse(
 
 public record ScaErrorResponse(string Error, IReadOnlyList<string>? AllowedFactors = null);
 
-public record ScaResponseEvent<TPayload>(
-    Guid EventId,
-    string EventType,
-    string Endpoint,
-    int StatusCode,
-    TPayload Response,
-    DateTimeOffset EmittedAt
-);
-
 public record ScaTransaction(
     [property: BsonId]
     [property: BsonRepresentation(BsonType.String)]

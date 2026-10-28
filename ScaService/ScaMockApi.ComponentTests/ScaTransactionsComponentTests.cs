@@ -16,6 +16,11 @@ public sealed class ScaTransactionsComponentTests : Feature, IDisposable
     private ScaTransaction? _currentTransaction;
     private VerifyScaTransactionResponse? _lastVerificationResponse;
 
+    private const string IdempotencyKeyHeader = "Idempotency-Key";
+
+    /// <summary>The Idempotency-Key sent with the most recent request.</summary>
+    public string? LastIdempotencyKey { get; private set; }
+
     public ScaTransactionsComponentTests()
     {
         var configuration = new ConfigurationBuilder()
@@ -41,6 +46,24 @@ public sealed class ScaTransactionsComponentTests : Feature, IDisposable
         };
     }
 
+    /// <summary>
+    /// Posts JSON with a unique <c>Idempotency-Key</c> header, which ScaMockApi stamps onto the
+    /// published <c>ScaEventEnvelope</c>.
+    /// </summary>
+    private async Task<HttpResponseMessage> PostWithIdempotencyKeyAsync<TRequest>(string path, TRequest body)
+    {
+        LastIdempotencyKey = $"comp-test-{Guid.NewGuid()}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Add(IdempotencyKeyHeader, LastIdempotencyKey);
+
+        _lastResponse?.Dispose();
+        return await _client.SendAsync(request);
+    }
+
     [Given(@"an account number ""(.*)"" and transaction amount (.*)")]
     public void GivenAnAccountNumberAndTransactionAmount(string accountNumber, string amount)
     {
@@ -57,7 +80,7 @@ public sealed class ScaTransactionsComponentTests : Feature, IDisposable
     [When(@"I start an SCA transaction")]
     public async Task WhenIStartAnScaTransaction()
     {
-        _lastResponse = await _client.PostAsJsonAsync(
+        _lastResponse = await PostWithIdempotencyKeyAsync(
             "/api/sca/transactions/start",
             new StartScaTransactionRequest(_accountNumber, _transactionAmount));
 
@@ -73,7 +96,7 @@ public sealed class ScaTransactionsComponentTests : Feature, IDisposable
     {
         Assert.NotNull(_currentTransaction);
 
-        _lastResponse = await _client.PostAsJsonAsync(
+        _lastResponse = await PostWithIdempotencyKeyAsync(
             "/api/sca/transactions/issue",
             new IssueScaFactorRequest(_currentTransaction.TransactionId, accountNumber, factor));
 
@@ -89,7 +112,7 @@ public sealed class ScaTransactionsComponentTests : Feature, IDisposable
     {
         Assert.NotNull(_currentTransaction);
 
-        _lastResponse = await _client.PostAsJsonAsync(
+        _lastResponse = await PostWithIdempotencyKeyAsync(
             "/api/sca/transactions/verify",
             new VerifyScaTransactionRequest(_currentTransaction.TransactionId, accountNumber));
 
@@ -102,7 +125,7 @@ public sealed class ScaTransactionsComponentTests : Feature, IDisposable
     [When(@"I verify an unknown transaction ID for account ""(.*)""")]
     public async Task WhenIVerifyAnUnknownTransactionIdForAccount(string accountNumber)
     {
-        _lastResponse = await _client.PostAsJsonAsync(
+        _lastResponse = await PostWithIdempotencyKeyAsync(
             "/api/sca/transactions/verify",
             new VerifyScaTransactionRequest(Guid.NewGuid(), accountNumber));
     }

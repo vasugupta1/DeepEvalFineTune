@@ -33,18 +33,14 @@ var rabbitMq = builder.AddRabbitMQ("deepeval-rabbitmq")
     .WithLifetime(ContainerLifetime.Persistent)
     .WithManagementPlugin();
 
-const string startTransactionQueue = "sca-transaction-start-events";
-const string issueFactorQueue = "sca-transaction-issue-events";
-const string verifyTransactionQueue = "sca-transaction-verify-events";
+const string scaEventsQueue = "sca-transaction-events";
 
 //#####################Downstream Domain Services##############
 #pragma warning disable ASPIRECSHARPAPPS001
 var scaMockApi = builder.AddCSharpApp("scamockapi", "../ScaService/ScaMockApi")
     .WithHttpEndpoint(port: 8001, name: "http")
     .WithHttpHealthCheck("/api/healthcheck")
-    .WithEnvironment("ScaEventQueues__StartTransaction", startTransactionQueue)
-    .WithEnvironment("ScaEventQueues__IssueFactor", issueFactorQueue)
-    .WithEnvironment("ScaEventQueues__VerifyTransaction", verifyTransactionQueue)
+    .WithEnvironment("ScaEvents__QueueName", scaEventsQueue)
     .WithReference(transactionDb)
     .WithReference(rabbitMq)
     .WaitFor(transactionDb)
