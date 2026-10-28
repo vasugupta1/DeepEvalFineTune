@@ -3,10 +3,12 @@ using ScaMockApi.Messaging;
 using ScaMockApi.Models;
 using ScaMockApi.Repositories;
 using ScaMockApi.Services;
+using ScaMockApi.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.AddScaTelemetry();
 builder.Services.AddHealthChecks();
 
 builder.Services.Configure<ScaEventOptions>(

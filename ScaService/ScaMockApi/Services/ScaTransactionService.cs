@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using ScaMockApi.Messaging;
 using ScaMockApi.Models;
 using ScaMockApi.Repositories;
+using ScaMockApi.Telemetry;
 
 namespace ScaMockApi.Services;
 
@@ -12,11 +14,16 @@ public class ScaTransactionService : IScaTransactionService
 {
     private readonly IScaTransactionRepository _repository;
     private readonly IScaEventPublisher _eventPublisher;
+    private readonly ScaMetrics _metrics;
 
-    public ScaTransactionService(IScaTransactionRepository repository, IScaEventPublisher eventPublisher)
+    public ScaTransactionService(
+        IScaTransactionRepository repository,
+        IScaEventPublisher eventPublisher,
+        ScaMetrics metrics)
     {
         _repository = repository;
         _eventPublisher = eventPublisher;
+        _metrics = metrics;
     }
 
     public async Task<ScaServiceResult> StartAsync(
@@ -203,6 +210,7 @@ public class ScaTransactionService : IScaTransactionService
         private readonly TRequest _request;
         private readonly string _idempotencyKey;
         private readonly CancellationToken _cancellationToken;
+        private readonly long _startedAt = Stopwatch.GetTimestamp();
 
         public EventContext(
             ScaTransactionService service,
@@ -231,7 +239,19 @@ public class ScaTransactionService : IScaTransactionService
                 statusCode: statusCode,
                 responseBody: response);
 
-            await _service._eventPublisher.PublishAsync(envelope, _cancellationToken);
+            try
+            {
+                await _service._eventPublisher.PublishAsync(envelope, _cancellationToken);
+            }
+            catch
+            {
+                // A failed publish surfaces to the caller as a 500.
+                _service._metrics.RecordRequestProcessed(
+                    _path, eventType, StatusCodes.Status500InternalServerError, Stopwatch.GetElapsedTime(_startedAt));
+                throw;
+            }
+
+            _service._metrics.RecordRequestProcessed(_path, eventType, statusCode, Stopwatch.GetElapsedTime(_startedAt));
 
             return new ScaServiceResult(statusCode, response);
         }

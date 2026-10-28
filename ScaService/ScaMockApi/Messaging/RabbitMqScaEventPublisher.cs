@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using ScaMockApi.Models;
+using ScaMockApi.Telemetry;
 
 namespace ScaMockApi.Messaging;
 
@@ -10,11 +11,13 @@ public class RabbitMqScaEventPublisher : IScaEventPublisher
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IConnection _connection;
+    private readonly ScaMetrics _metrics;
     private readonly string _queueName;
 
-    public RabbitMqScaEventPublisher(IConnection connection, IOptions<ScaEventOptions> options)
+    public RabbitMqScaEventPublisher(IConnection connection, IOptions<ScaEventOptions> options, ScaMetrics metrics)
     {
         _connection = connection;
+        _metrics = metrics;
         _queueName = options.Value.QueueName;
 
         if (string.IsNullOrWhiteSpace(_queueName))
@@ -27,6 +30,22 @@ public class RabbitMqScaEventPublisher : IScaEventPublisher
     public async Task PublishAsync<TRequest, TResponse>(
         ScaEventEnvelope<TRequest, TResponse> envelope,
         CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await PublishCoreAsync(envelope, cancellationToken);
+            _metrics.RecordEventPublished(envelope.Type);
+        }
+        catch (Exception ex)
+        {
+            _metrics.RecordEventPublishFailed(envelope.Type, ex);
+            throw;
+        }
+    }
+
+    private async Task PublishCoreAsync<TRequest, TResponse>(
+        ScaEventEnvelope<TRequest, TResponse> envelope,
+        CancellationToken cancellationToken)
     {
         await using var channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
