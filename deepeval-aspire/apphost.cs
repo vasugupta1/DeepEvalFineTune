@@ -79,6 +79,17 @@ var ollama = builder.AddOllama("ollama")
 var llm = ollama.AddModel("llm", "llama3.1:8b");
 var embeddings = ollama.AddModel("embeddings", "nomic-embed-text");
 
+#pragma warning disable ASPIRECSHARPAPPS001
+var scaEventConsumer = builder.AddCSharpApp("sca-event-consumer", "../data-consumer/ScaEventConsumer")
+    .WithEnvironment("ScaEvents__QueueName", scaEventsQueue)
+    .WithReference(rabbitMq)
+    .WithReference(vectorDb)
+    .WithReference(embeddings)
+    .WaitFor(rabbitMq)
+    .WaitFor(vectorDb)
+    .WaitFor(embeddings);
+#pragma warning restore ASPIRECSHARPAPPS001
+
 var litellm = builder.AddContainer("litellm", "ghcr.io/berriai/litellm", "main-latest")
     .WithBindMount("../litellm/litellm_config.yaml", "/app/config.yaml", isReadOnly: true)
     .WithArgs("--config", "/app/config.yaml", "--port", "4000")
