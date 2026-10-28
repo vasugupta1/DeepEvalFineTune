@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ScaMockApi.ComponentTests/ScaMockApi.ComponentTests.csproj" />
+  <Project Path="ScaMockApi/ScaMockApi.csproj" />
+</Solution>
