@@ -39,7 +39,7 @@ const string verifyTransactionQueue = "sca-transaction-verify-events";
 
 //#####################Downstream Domain Services##############
 #pragma warning disable ASPIRECSHARPAPPS001
-var scaMockApi = builder.AddCSharpApp("scamockapi", "../backend/ScaMockApi")
+var scaMockApi = builder.AddCSharpApp("scamockapi", "../ScaService/ScaMockApi")
     .WithHttpEndpoint(port: 8001, name: "http")
     .WithHttpHealthCheck("/api/healthcheck")
     .WithEnvironment("ScaEventQueues__StartTransaction", startTransactionQueue)
@@ -59,7 +59,7 @@ var scaMockApi = builder.AddCSharpApp("scamockapi", "../backend/ScaMockApi")
 var scaMockApiComponentTests = builder.AddExecutable(
         "scamockapi-componenttests",
         "dotnet",
-        "../backend/ScaMockApi.ComponentTests",
+        "../ScaService/ScaMockApi.ComponentTests",
         "test", "--logger", "console;verbosity=normal")
     .WithEnvironment("ScaMockApi__BaseUrl", scaMockApi.GetEndpoint("http"))
     .WithReference(scaMockApi)
